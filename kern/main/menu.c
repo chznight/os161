@@ -347,6 +347,35 @@ cmd_kheapstats(int nargs, char **args)
 	return 0;
 }
 
+static
+int
+cmd_dbflags(int nargs, char **args)
+{
+	if (nargs != 3) {
+		kprintf("Useage: df nr on/off\n");
+		return EINVAL;
+	}
+	int num;
+	char *on_off;
+	num = atoi (args[1]);
+	on_off = args[2];
+	// kprintf ("num: %d, string: %s\n", num, on_off);
+	if ((num > 12) || (num < 1)) {
+		kprintf("Useage: df nr on/off\n");
+		return EINVAL;
+	}
+
+	if ( strcmp (on_off, "on") == 0) {
+		dbflags = dbflags | (1 << (num-1));
+	} else if ( strcmp (on_off, "off") == 0) {
+		dbflags = ~((~dbflags) | (1 << (num-1)));
+	} else {
+		kprintf("Useage: df nr on/off\n");
+		return EINVAL;
+	}
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Menus.
@@ -379,6 +408,7 @@ showmenu(const char *name, const char *x[])
 static const char *opsmenu[] = {
 	"[s]       Shell                     ",
 	"[p]       Other program             ",
+	"[dbflags] Debug flags               ",
 	"[mount]   Mount a filesystem        ",
 	"[unmount] Unmount a filesystem      ",
 	"[bootfs]  Set \"boot\" filesystem     ",
@@ -390,6 +420,34 @@ static const char *opsmenu[] = {
 	"[q]       Quit and shut down        ",
 	NULL
 };
+
+static const char *dbflagsmenu[] = {
+	"[df 1 on/off]     DB_LOCORE         ",
+	"[df 2 on/off]     DB_SYSCALL        ",
+	"[df 3 on/off]     DB_INTERRUPT      ",
+	"[df 4 on/off]     DB_DEVICE         ",
+	"[df 5 on/off]     DB_THREADS        ",
+	"[df 6 on/off]     DB_VM             ",
+	"[df 7 on/off]     DB_EXEC           ",
+	"[df 8 on/off]     DB_VFS            ",
+	"[df 9 on/off]     DB_SFS            ",
+	"[df 10 on/off]    DB_NET            ",
+	"[df 11 on/off]    DB_NETFS          ",
+	"[df 12 on/off]    DB_KMALLOC        ",
+	NULL
+};
+
+static
+int
+cmd_dbflagsmenu(int n, char **a)
+{
+	(void)n;
+	(void)a;
+
+	showmenu("OS/161 Debug flags", dbflagsmenu);
+	kprintf ("Current value of dbflags is 0x%x\n", dbflags);
+	return 0;
+}
 
 static
 int
@@ -480,6 +538,7 @@ static struct {
 	{ "help",	cmd_mainmenu },
 	{ "?o",		cmd_opsmenu },
 	{ "?t",		cmd_testmenu },
+	{ "dbflags", cmd_dbflagsmenu},
 
 	/* operations */
 	{ "s",		cmd_shell },
@@ -530,6 +589,9 @@ static struct {
 	{ "fs3",	writestress },
 	{ "fs4",	writestress2 },
 	{ "fs5",	createstress },
+
+	/* change debug flags */
+	{ "df",	cmd_dbflags},
 
 	{ NULL, NULL }
 };
