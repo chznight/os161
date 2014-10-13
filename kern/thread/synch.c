@@ -9,6 +9,7 @@
 #include <thread.h>
 #include <curthread.h>
 #include <machine/spl.h>
+#include <queue.h>
 
 ////////////////////////////////////////////////////////////
 //
@@ -98,6 +99,10 @@ V(struct semaphore *sem)
 //
 // Lock.
 
+/*
+ * Allocate memory for one lock structure
+ * Straight forward
+ */
 struct lock *
 lock_create(const char *name)
 {
@@ -115,10 +120,17 @@ lock_create(const char *name)
 	}
 	
 	// add stuff here as needed
-	
+	lock->status = 0; // initalize to 0, meaning the lock is free
+	lock->curthread_with_lock = NULL;
+	lock->lock_counter = 0;
+
 	return lock;
 }
 
+/*
+ * Free lock structure
+ * Straight forward
+ */
 void
 lock_destroy(struct lock *lock)
 {
@@ -130,30 +142,83 @@ lock_destroy(struct lock *lock)
 	kfree(lock);
 }
 
+/*
+ * Aquire lock, if the current thread already has the lock, increase the lock counter
+ * We will make sure the lock counter is zero before releasing the lock
+ */
 void
 lock_acquire(struct lock *lock)
 {
-	// Write this
+	int spl;
+	assert (lock != NULL);
 
-	(void)lock;  // suppress warning until code gets written
+	// disable interrupts
+	spl = splhigh();
+
+	// if the same threads attempts to accuire lock twice
+	// we increment the lock counter
+	if (curthread == lock->curthread_with_lock) {
+		lock->lock_counter = lock->lock_counter + 1;
+		splx(spl);
+		return;
+	}
+
+	while (lock->status == 1) {
+		thread_sleep(lock);
+	}
+
+	
+	lock->curthread_with_lock = curthread;
+	lock->lock_counter = lock->lock_counter + 1;
+	lock->status = 1;
+
+	splx(spl);
 }
 
+/*
+ * Release lock
+ * Check if the current thread holds the lock, can't let different thread releasing eachother's locks
+ * We will make sure the lock counter is zero before releasing the lock
+ */
 void
 lock_release(struct lock *lock)
 {
-	// Write this
+	int spl;
+	assert (lock != NULL);
 
-	(void)lock;  // suppress warning until code gets written
+	// disable interrupts
+	spl = splhigh();
+	if (curthread != lock->curthread_with_lock) {
+		//can not unlock as this thread does not hold the lock
+		//should panic
+		splx(spl);
+		return;
+	}
+
+	lock->lock_counter = lock->lock_counter - 1;
+
+	if (lock->lock_counter == 0) {
+		lock->curthread_with_lock = NULL;
+		lock->status = 0;
+		thread_wakeup (lock);
+	}
+
+	splx(spl);
 }
 
 int
 lock_do_i_hold(struct lock *lock)
 {
-	// Write this
-
-	(void)lock;  // suppress warning until code gets written
-
-	return 1;    // dummy until code gets written
+	// I don't think disabling interrupts is nessesary here,
+	// But just in case
+	int spl = splhigh();
+	if (lock->curthread_with_lock == curthread) {
+		splx(spl);
+		return 1;
+	} else {
+		splx(spl);
+		return 0;
+	}
 }
 
 ////////////////////////////////////////////////////////////
@@ -178,7 +243,7 @@ cv_create(const char *name)
 	}
 	
 	// add stuff here as needed
-	
+	cv->q = q_create(2);
 	return cv;
 }
 
@@ -188,7 +253,7 @@ cv_destroy(struct cv *cv)
 	assert(cv != NULL);
 
 	// add stuff here as needed
-	
+	q_destroy(cv->q);
 	kfree(cv->name);
 	kfree(cv);
 }
@@ -196,23 +261,40 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int result;
+	assert (lock_do_i_hold(lock));
+	int spl = splhigh();
+	result = q_addtail(cv->q, curthread);
+	assert (result == 0);
+	lock_release(lock);
+	thread_sleep(curthread);
+	lock_acquire(lock);
+	splx(spl);
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int check_empty_q;
+	assert (lock_do_i_hold(lock));
+	int spl = splhigh();
+	check_empty_q = q_empty (cv->q);
+	if (check_empty_q == 0)
+		thread_wakeup (q_remhead(cv->q));
+	splx(spl);
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-	// Write this
-	(void)cv;    // suppress warning until code gets written
-	(void)lock;  // suppress warning until code gets written
+	int check_empty_q; 
+	assert (cv != NULL);
+	assert (lock_do_i_hold(lock));
+	int spl = splhigh();
+	check_empty_q = q_empty(cv->q);
+	while (check_empty_q == 0) {
+		thread_wakeup(q_remhead(cv->q));
+		check_empty_q = q_empty(cv->q);
+	}
+	splx(spl);
 }

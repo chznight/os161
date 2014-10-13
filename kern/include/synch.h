@@ -50,6 +50,9 @@ void              sem_destroy(struct semaphore *);
 
 struct lock {
 	char *name;
+	volatile int status;
+	volatile struct thread *curthread_with_lock;
+	volatile int lock_counter;
 	// add what you need here
 	// (don't forget to mark things volatile as needed)
 };
@@ -89,6 +92,7 @@ void         lock_destroy(struct lock *);
 
 struct cv {
 	char *name;
+	struct queue *q;
 	// add what you need here
 	// (don't forget to mark things volatile as needed)
 };
